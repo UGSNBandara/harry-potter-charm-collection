@@ -127,15 +127,24 @@ def get_recordings_stats():
         db = _mongo_client[MONGO_DB]
         files_collection = db[f"{MONGO_BUCKET}.files"]
         
-        # Count by spell
+        # Count by spell - check both with and without 'metadata.' prefix
         spell_counts = {}
         for spell in SPELLS:
+            # Try with metadata prefix first
             count = files_collection.count_documents({"metadata.spell": spell})
+            if count == 0:
+                # Try without metadata prefix (older format)
+                count = files_collection.count_documents({"spell": spell})
             spell_counts[spell] = count
         
-        # Count by user
+        # Count by user - try both formats
         pipeline = [
-            {"$group": {"_id": "$metadata.username", "count": {"$sum": 1}}},
+            {"$project": {
+                "username": {
+                    "$ifNull": ["$metadata.username", "$username"]
+                }
+            }},
+            {"$group": {"_id": "$username", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}}
         ]
         user_counts = list(files_collection.aggregate(pipeline))
@@ -264,6 +273,24 @@ def admin_panel():
                 st.write(f"**{user_stat['_id']}:** {user_stat['count']}")
         else:
             st.write("No recordings yet")
+    
+    # Debug: Show sample recording metadata
+    with st.expander("🔍 Debug: Sample Recording Metadata"):
+        try:
+            db = _mongo_client[MONGO_DB]
+            files_collection = db[f"{MONGO_BUCKET}.files"]
+            sample = files_collection.find_one()
+            if sample:
+                st.json({
+                    "filename": sample.get("filename"),
+                    "metadata": sample.get("metadata"),
+                    "contentType": sample.get("contentType"),
+                    "uploadDate": str(sample.get("uploadDate"))
+                })
+            else:
+                st.write("No recordings found")
+        except Exception as e:
+            st.error(f"Error: {e}")
     
     # Download options
     st.header("📥 Download Options")
