@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+recordings/
+download.py
+admin_db.py
+.env
+.venv
