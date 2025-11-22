@@ -123,10 +123,14 @@ def get_recordings_stats():
         return None
     
     try:
+        # Access the files collection directly
+        db = _mongo_client[MONGO_DB]
+        files_collection = db[f"{MONGO_BUCKET}.files"]
+        
         # Count by spell
         spell_counts = {}
         for spell in SPELLS:
-            count = fs._GridFS__files.count_documents({"metadata.spell": spell})
+            count = files_collection.count_documents({"metadata.spell": spell})
             spell_counts[spell] = count
         
         # Count by user
@@ -134,10 +138,10 @@ def get_recordings_stats():
             {"$group": {"_id": "$metadata.username", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}}
         ]
-        user_counts = list(fs._GridFS__files.aggregate(pipeline))
+        user_counts = list(files_collection.aggregate(pipeline))
         
         # Total count
-        total = fs._GridFS__files.count_documents({})
+        total = files_collection.count_documents({})
         
         return {
             "total": total,
