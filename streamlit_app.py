@@ -34,6 +34,7 @@ load_env()
 MONGO_URI = os.getenv("MONGO_URI", "")
 MONGO_DB = os.getenv("MONGO_DB", "spells")
 MONGO_BUCKET = os.getenv("MONGO_BUCKET", "fs")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 TARGET_SR = 16000
 SPELLS = ["Lumos", "Nox", "Alohomora", "Wingardium Leviosa", "Accio", "Reparo"]
@@ -115,9 +116,189 @@ def save_audio_to_mongo(audio_bytes: bytes, spell: str, username: str) -> Option
         return None
 
 
-def main():
-    st.set_page_config(page_title="Spell Recorder", page_icon="✨", layout="wide")
+def get_recordings_stats():
+    """Get count statistics from MongoDB."""
+    fs = get_gridfs()
+    if fs is None:
+        return None
     
+    try:
+        # Count by spell
+        spell_counts = {}
+        for spell in SPELLS:
+            count = fs._GridFS__files.count_documents({"metadata.spell": spell})
+            spell_counts[spell] = count
+        
+        # Count by user
+        pipeline = [
+            {"$group": {"_id": "$metadata.username", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}}
+        ]
+        user_counts = list(fs._GridFS__files.aggregate(pipeline))
+        
+        # Total count
+        total = fs._GridFS__files.count_documents({})
+        
+        return {
+            "total": total,
+            "by_spell": spell_counts,
+            "by_user": user_counts
+        }
+    except Exception as e:
+        st.error(f"Error fetching stats: {e}")
+        return None
+
+
+def download_all_recordings():
+    """Create a ZIP file with all recordings and CSV metadata."""
+    import zipfile
+    import csv
+    from datetime import datetime
+    
+    fs = get_gridfs()
+    if fs is None:
+        return None
+    
+    try:
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Get all recordings
+            recordings = []
+            for file in fs.find():
+                metadata = file.metadata or {}
+                recordings.append({
+                    "filename": file.filename,
+                    "spell": metadata.get("spell", "unknown"),
+                    "username": metadata.get("username", "unknown"),
+                    "timestamp_ms": metadata.get("timestamp_ms", 0),
+                    "file_id": str(file._id)
+                })
+                
+                # Add WAV file to zip
+                audio_data = file.read()
+                zip_file.writestr(f"recordings/{file.filename}", audio_data)
+            
+            # Create CSV metadata file
+            csv_buffer = io.StringIO()
+            if recordings:
+                fieldnames = ["filename", "spell", "username", "timestamp_ms", "file_id"]
+                writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(recordings)
+            
+            zip_file.writestr("metadata.csv", csv_buffer.getvalue())
+        
+        zip_buffer.seek(0)
+        return zip_buffer.getvalue()
+    except Exception as e:
+        st.error(f"Error creating download: {e}")
+        return None
+
+
+def download_csv_metadata():
+    """Create CSV file with metadata only."""
+    import csv
+    
+    fs = get_gridfs()
+    if fs is None:
+        return None
+    
+    try:
+        csv_buffer = io.StringIO()
+        fieldnames = ["filename", "spell", "username", "timestamp_ms", "file_id"]
+        writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for file in fs.find():
+            metadata = file.metadata or {}
+            writer.writerow({
+                "filename": file.filename,
+                "spell": metadata.get("spell", "unknown"),
+                "username": metadata.get("username", "unknown"),
+                "timestamp_ms": metadata.get("timestamp_ms", 0),
+                "file_id": str(file._id)
+            })
+        
+        return csv_buffer.getvalue().encode('utf-8')
+    except Exception as e:
+        st.error(f"Error creating CSV: {e}")
+        return None
+
+
+def admin_panel():
+    """Admin panel for viewing stats and downloading recordings."""
+    st.title("🔐 Admin Panel")
+    
+    if not MONGO_URI:
+        st.error("Database not configured")
+        return
+    
+    # Get statistics
+    stats = get_recordings_stats()
+    
+    if stats is None:
+        st.error("Failed to fetch statistics")
+        return
+    
+    # Display stats
+    st.header("📊 Recording Statistics")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("Total Recordings", stats["total"])
+        
+        st.subheader("By Spell")
+        for spell, count in stats["by_spell"].items():
+            st.write(f"**{spell}:** {count}")
+    
+    with col2:
+        st.subheader("By User")
+        if stats["by_user"]:
+            for user_stat in stats["by_user"][:10]:  # Top 10 users
+                st.write(f"**{user_stat['_id']}:** {user_stat['count']}")
+        else:
+            st.write("No recordings yet")
+    
+    # Download options
+    st.header("📥 Download Options")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("Download All (ZIP)", type="primary", use_container_width=True):
+            with st.spinner("Creating ZIP file..."):
+                zip_data = download_all_recordings()
+                if zip_data:
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    st.download_button(
+                        label="💾 Download ZIP",
+                        data=zip_data,
+                        file_name=f"spell_recordings_{timestamp}.zip",
+                        mime="application/zip",
+                        use_container_width=True
+                    )
+    
+    with col2:
+        if st.button("Download Metadata (CSV)", use_container_width=True):
+            with st.spinner("Creating CSV file..."):
+                csv_data = download_csv_metadata()
+                if csv_data:
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    st.download_button(
+                        label="💾 Download CSV",
+                        data=csv_data,
+                        file_name=f"spell_metadata_{timestamp}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+
+
+def recorder_interface():
+    """Main recorder interface."""
     st.title("✨ Spell Recorder")
     st.markdown("""
     Record each spell using your microphone. Press the record button and speak the spell clearly.
@@ -158,7 +339,7 @@ def main():
         if not username.strip():
             st.error("Please enter your name")
         elif selected_count == 0:
-            st.error("Please upload at least one spell recording")
+            st.error("Please record at least one spell")
         else:
             user = sanitize_username(username)
             saved = []
@@ -201,5 +382,36 @@ def main():
     """)
 
 
+def main():
+    st.set_page_config(page_title="Spell Recorder", page_icon="✨", layout="wide")
+    
+    # Sidebar for mode selection
+    st.sidebar.title("Navigation")
+    mode = st.sidebar.radio("Select Mode", ["🎤 Record Spells", "🔐 Admin Panel"])
+    
+    if mode == "🎤 Record Spells":
+        recorder_interface()
+    else:
+        # Admin panel with password protection
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Admin Login")
+        
+        if not ADMIN_PASSWORD:
+            st.error("Admin password not configured. Set ADMIN_PASSWORD in your environment.")
+            return
+        
+        password = st.sidebar.text_input("Enter Admin Password", type="password", key="admin_password")
+        
+        if password:
+            if password == ADMIN_PASSWORD:
+                st.sidebar.success("✅ Access granted")
+                admin_panel()
+            else:
+                st.error("❌ Invalid password")
+        else:
+            st.info("👈 Enter admin password in the sidebar to access the admin panel")
+
+
 if __name__ == "__main__":
     main()
+
