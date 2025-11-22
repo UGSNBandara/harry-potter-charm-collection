@@ -120,7 +120,7 @@ def main():
     
     st.title("✨ Spell Recorder")
     st.markdown("""
-    Record any of the listed spells using your microphone or upload a file.
+    Record each spell using your microphone. Press the record button and speak the spell clearly.
     
     **Spells to collect:** Lumos, Nox, Alohomora, Wingardium Leviosa, Accio, Reparo
     """)
@@ -131,9 +131,9 @@ def main():
     # Username input
     username = st.text_input("Your Name (for metadata)", placeholder="e.g., harry_p", key="username")
     
-    st.markdown("### Record or Upload Audio for Each Spell")
+    st.markdown("### 🎤 Record Each Spell")
     
-    # Audio inputs for each spell
+    # Audio recorder for each spell
     audio_files = {}
     cols = st.columns(2)
     
@@ -141,9 +141,8 @@ def main():
         col = cols[idx % 2]
         with col:
             st.markdown(f"**{spell}**")
-            audio_file = st.file_uploader(
-                f"Upload {spell}",
-                type=["wav", "mp3", "ogg", "flac", "m4a"],
+            audio_file = st.audio_input(
+                f"Record {spell}",
                 key=f"audio_{spell}",
                 label_visibility="collapsed"
             )
@@ -194,7 +193,9 @@ def main():
     st.markdown("---")
     st.markdown("""
     **Notes:**
-    - Submissions are stored in MongoDB GridFS with 16 kHz mono WAV format
+    - Click the microphone icon to record each spell
+    - Speak clearly and press stop when done
+    - Recordings are stored in MongoDB GridFS with 16 kHz mono WAV format
     - You don't have to record all spells at once
     - Files are saved with metadata: username, spell, timestamp
     """)
