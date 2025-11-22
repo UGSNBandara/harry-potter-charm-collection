@@ -37,7 +37,7 @@ MONGO_BUCKET = os.getenv("MONGO_BUCKET", "fs")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 TARGET_SR = 16000
-SPELLS = ["Lumos", "Nox", "Alohomora", "Wingardium Leviosa", "Accio", "Reparo"]
+SPELLS = ["Lumos", "Nox", "Alohomora", "Wingardium Leviosa", "Accio", "Incendio"]
 
 _mongo_client: Optional[MongoClient] = None
 _mongo_fs: Optional[GridFS] = None
@@ -334,7 +334,7 @@ def recorder_interface():
     st.markdown("""
     Record each spell using your microphone. Press the record button and speak the spell clearly.
     
-    **Spells to collect:** Lumos, Nox, Alohomora, Wingardium Leviosa, Accio, Reparo
+    **Spells to collect:** Lumos, Nox, Alohomora, Wingardium Leviosa, Accio, Incendio
     """)
 
     if not MONGO_URI:
